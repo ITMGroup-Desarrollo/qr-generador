@@ -1,0 +1,307 @@
+import flet as ft
+import qrcode
+import qrcode.image.svg
+import io
+import base64
+import os
+import threading
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from datetime import datetime
+from pathlib import Path
+
+# ── Configuración ──────────────────────────────────────────
+OUTPUT_DIR = str(Path.home() / "Downloads")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "imagenes", "logo-ITM-Group.png")
+
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.txt")
+try:
+    with open(CONFIG_PATH, "r") as f:
+        TUNNEL_URL = f.read().strip()
+except:
+    TUNNEL_URL = "http://localhost:8081"
+
+# ── Servidor de descarga ───────────────────────────────────
+class DownloadHandler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=OUTPUT_DIR, **kwargs)
+    def log_message(self, format, *args):
+        pass
+
+def start_file_server():
+    server = HTTPServer(("0.0.0.0", 8081), DownloadHandler)
+    server.serve_forever()
+
+threading.Thread(target=start_file_server, daemon=True).start()
+
+# ── Generador de QR ────────────────────────────────────────
+def generate_qr(data, color, formato):
+    fill = "white" if color == "blanco" else "black"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"qr_{timestamp}.{formato}"
+    filepath = os.path.join(OUTPUT_DIR, filename)
+
+    if formato == "svg":
+        factory = qrcode.image.svg.SvgFillImage
+        qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=20, border=4)
+        qr.add_data(data)
+        qr.make(fit=True)
+        img_svg = qr.make_image(image_factory=factory)
+        svg_content = img_svg.to_string().decode()
+        with open(filepath, "w") as f:
+            f.write(svg_content)
+        return None, filepath, filename
+
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=4)
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color=fill, back_color="transparent").convert("RGBA")
+
+    if color == "blanco":
+        new_data = [(0, 0, 0, 0) if item[0] < 50 else item for item in img.getdata()]
+        img.putdata(new_data)
+
+    img.save(filepath, "PNG")
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    b64 = base64.b64encode(buffer.getvalue()).decode()
+    return b64, filepath, filename
+
+# ── App principal ──────────────────────────────────────────
+def main(page: ft.Page):
+    page.title = "Generador de QR"
+    page.bgcolor = "#ffffff"
+    page.padding = 0
+    page.scroll = "auto"
+    page.theme_mode = "light"
+
+    # Logo
+    try:
+        with open(LOGO_PATH, "rb") as f:
+            logo_b64 = base64.b64encode(f.read()).decode()
+        logo = ft.Image(src_base64=logo_b64, width=150, height=55, fit="contain")
+    except:
+        logo = ft.Text("ITM Group®", size=24, weight="bold", color="#1B2D6B")
+
+    # Campos
+    text_input = ft.TextField(
+        hint_text="Escribe un texto o URL",
+        expand=True,
+        color="#1B2D6B",
+        border_color="#1B2D6B",
+        focused_border_color="#1B2D6B",
+        hint_style=ft.TextStyle(color="#bbbbbb"),
+        bgcolor="#f5f7ff",
+        text_size=14,
+        border_radius=8,
+    )
+
+    color_dd = ft.Dropdown(
+        value="blanco",
+        expand=True,
+        color="white",
+        bgcolor="#1B2D6B",
+        border_color="#1B2D6B",
+        border_radius=8,
+        options=[
+            ft.dropdown.Option("blanco", "⬜ Blanco"),
+            ft.dropdown.Option("negro", "⬛ Negro"),
+        ],
+    )
+
+    formato_dd = ft.Dropdown(
+        value="png",
+        expand=True,
+        color="white",
+        bgcolor="#1B2D6B",
+        border_color="#1B2D6B",
+        border_radius=8,
+        options=[
+            ft.dropdown.Option("png", "PNG"),
+            ft.dropdown.Option("svg", "SVG"),
+        ],
+    )
+
+    # Modal
+    modal_img = ft.Image(src="", width=240, height=240, fit="contain")
+    modal_label = ft.Text("", color="#1B2D6B", size=13, text_align="center", max_lines=2)
+    modal_file = ft.Text("", color="#aaaaaa", size=11, text_align="center")
+
+    def close_modal(e):
+        modal.open = False
+        page.update()
+
+    def descargar(e):
+        page.launch_url(f"{TUNNEL_URL}/{modal_file.value}")
+
+    modal = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("QR Generado ✅", color="#1B2D6B", text_align="center", weight="bold"),
+        content=ft.Column([
+            ft.Container(
+                content=modal_img,
+                bgcolor="#1B2D6B",
+                border_radius=10,
+                padding=10,
+                alignment=ft.Alignment(0, 0),
+            ),
+            modal_label,
+            modal_file,
+        ], horizontal_alignment="center", spacing=8, tight=True),
+        actions=[
+            ft.TextButton("Cerrar", on_click=close_modal),
+            ft.ElevatedButton(
+                "⬇ Descargar",
+                bgcolor="#1B2D6B",
+                color="white",
+                on_click=descargar,
+                style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=6)),
+            ),
+        ],
+        actions_alignment="end",
+    )
+    page.overlay.append(modal)
+
+    # Historial
+    history = ft.GridView(
+        runs_count=2,
+        max_extent=175,
+        spacing=12,
+        run_spacing=12,
+        expand=False,
+    )
+
+    def abrir_modal(b64, filename, label):
+        modal_img.src_base64 = b64 if b64 else None
+        modal_img.visible = b64 is not None
+        modal_label.value = label
+        modal_file.value = filename
+        modal.open = True
+        page.update()
+
+    def mostrar_snack(msg):
+        page.snack_bar = ft.SnackBar(ft.Text(msg, color="white"), bgcolor="#1B2D6B")
+        page.snack_bar.open = True
+        page.update()
+
+    # Botón generar
+    btn_generar = ft.ElevatedButton(
+        "Generar QR",
+        bgcolor="#1B2D6B",
+        color="white",
+        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
+        width=float("inf"),
+        height=50,
+    )
+
+    def on_generate(e):
+        if not text_input.value or not text_input.value.strip():
+            mostrar_snack("⚠ Ingresa un texto o URL primero")
+            return
+
+        btn_generar.text = "Generando..."
+        btn_generar.disabled = True
+        page.update()
+
+        try:
+            b64, filepath, filename = generate_qr(
+                text_input.value.strip(), color_dd.value, formato_dd.value
+            )
+            bg = "#1B2D6B" if color_dd.value == "blanco" else "#f5f7ff"
+            label = text_input.value.strip()
+
+            if b64:
+                preview = ft.Image(src_base64=b64, width=110, height=110, fit="contain")
+            else:
+                preview = ft.Column([
+                    ft.Icon(ft.icons.QR_CODE, color="white", size=48),
+                    ft.Text("SVG", color="white", size=11, weight="bold"),
+                ], horizontal_alignment="center", alignment="center")
+
+            def _abrir(e, b=b64, fn=filename, lbl=label):
+                abrir_modal(b, fn, lbl)
+
+            card = ft.Container(
+                content=ft.Column([
+                    ft.Container(
+                        content=preview,
+                        bgcolor=bg,
+                        border_radius=8,
+                        padding=6,
+                        alignment=ft.Alignment(0, 0),
+                        width=135,
+                        height=125,
+                    ),
+                    ft.Text(
+                        label,
+                        color="#1B2D6B",
+                        size=10,
+                        max_lines=1,
+                        width=135,
+                        text_align="center",
+                    ),
+                    ft.ElevatedButton(
+                        "Ver",
+                        bgcolor="#1B2D6B",
+                        color="white",
+                        on_click=_abrir,
+                        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=6)),
+                        height=32,
+                        width=135,
+                    ),
+                ], horizontal_alignment="center", spacing=5, tight=True),
+                bgcolor="white",
+                border_radius=12,
+                padding=8,
+                border=ft.Border(
+                    left=ft.BorderSide(1, "#1B2D6B"),
+                    right=ft.BorderSide(1, "#1B2D6B"),
+                    top=ft.BorderSide(1, "#1B2D6B"),
+                    bottom=ft.BorderSide(1, "#1B2D6B"),
+                ),
+            )
+
+            history.controls.insert(0, card)
+            mostrar_snack("✅ QR generado correctamente")
+
+        except Exception as ex:
+            mostrar_snack(f"❌ Error: {ex}")
+        finally:
+            btn_generar.text = "Generar QR"
+            btn_generar.disabled = False
+            page.update()
+
+    btn_generar.on_click = on_generate
+
+    # Layout
+    page.add(
+        ft.Container(
+            content=ft.Column([
+                logo,
+                ft.Text("Generador de QR", size=13, color="#1B2D6B", text_align="center"),
+            ], horizontal_alignment="center", spacing=6),
+            padding=ft.Padding(left=0, right=0, top=24, bottom=24),
+            alignment=ft.Alignment(0, 0),
+            width=float("inf"),
+            border=ft.Border(bottom=ft.BorderSide(1, "#e0e0e0")),
+        ),
+        ft.Container(
+            content=ft.Column([
+                ft.Text("Texto o URL", color="#1B2D6B", size=12, weight="bold"),
+                ft.Row([text_input], expand=True),
+                ft.Row([
+                    ft.Column([ft.Text("Color", color="#1B2D6B", size=12, weight="bold"), color_dd], spacing=4, expand=True),
+                    ft.Column([ft.Text("Formato", color="#1B2D6B", size=12, weight="bold"), formato_dd], spacing=4, expand=True),
+                ], spacing=12),
+                btn_generar,
+                ft.Divider(color="#e0e0e0", height=20),
+                ft.Text("Historial", size=16, weight="bold", color="#1B2D6B", text_align="center", width=float("inf")),
+                history,
+            ], spacing=12),
+            padding=ft.Padding(left=16, right=16, top=20, bottom=20),
+        ),
+    )
+
+
+ft.run(main)
