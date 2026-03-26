@@ -48,10 +48,12 @@ def generate_qr(data, color, formato):
         qr.add_data(data)
         qr.make(fit=True)
         img_svg = qr.make_image(image_factory=factory)
-        svg_content = img_svg.to_string().decode()
-        with open(filepath, "w") as f:
-            f.write(svg_content)
-        return None, filepath, filename
+        svg_bytes = img_svg.to_string()
+        with open(filepath, "wb") as f:
+            f.write(svg_bytes)
+        b64 = base64.b64encode(svg_bytes).decode()
+        data_url = f"data:image/svg+xml;base64,{b64}"
+        return data_url, filepath, filename, b64, "image/svg+xml"
 
     qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=4)
     qr.add_data(data)
@@ -66,7 +68,8 @@ def generate_qr(data, color, formato):
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
     b64 = base64.b64encode(buffer.getvalue()).decode()
-    return b64, filepath, filename
+    data_url = f"data:image/png;base64,{b64}"
+    return data_url, filepath, filename, b64, "image/png"
 
 # ── App principal ──────────────────────────────────────────
 def main(page: ft.Page):
@@ -80,7 +83,7 @@ def main(page: ft.Page):
     try:
         with open(LOGO_PATH, "rb") as f:
             logo_b64 = base64.b64encode(f.read()).decode()
-        logo = ft.Image(src_base64=logo_b64, width=150, height=55, fit="contain")
+        logo = ft.Image(src=f"data:image/png;base64,{logo_b64}", width=150, height=55, fit="contain")
     except:
         logo = ft.Text("ITM Group®", size=24, weight="bold", color="#1B2D6B")
 
@@ -124,16 +127,19 @@ def main(page: ft.Page):
     )
 
     # Modal
-    modal_img = ft.Image(src="", width=240, height=240, fit="contain")
+    modal_img = ft.Image(src="https://placehold.co/240x240/1B2D6B/1B2D6B", width=240, height=240, fit="contain")
     modal_label = ft.Text("", color="#1B2D6B", size=13, text_align="center", max_lines=2)
     modal_file = ft.Text("", color="#aaaaaa", size=11, text_align="center")
+
+    current_data_url = {"value": None}
 
     def close_modal(e):
         modal.open = False
         page.update()
 
     def descargar(e):
-        page.launch_url(f"{TUNNEL_URL}/{modal_file.value}")
+        if current_data_url["value"]:
+            page.launch_url(current_data_url["value"])
 
     modal = ft.AlertDialog(
         modal=True,
@@ -172,9 +178,9 @@ def main(page: ft.Page):
         expand=False,
     )
 
-    def abrir_modal(b64, filename, label):
-        modal_img.src_base64 = b64 if b64 else None
-        modal_img.visible = b64 is not None
+    def abrir_modal(data_url, filename, label):
+        current_data_url["value"] = data_url
+        modal_img.src = data_url
         modal_label.value = label
         modal_file.value = filename
         modal.open = True
@@ -185,7 +191,6 @@ def main(page: ft.Page):
         page.snack_bar.open = True
         page.update()
 
-    # Botón generar
     btn_generar = ft.ElevatedButton(
         "Generar QR",
         bgcolor="#1B2D6B",
@@ -205,27 +210,19 @@ def main(page: ft.Page):
         page.update()
 
         try:
-            b64, filepath, filename = generate_qr(
+            data_url, filepath, filename, b64, mime = generate_qr(
                 text_input.value.strip(), color_dd.value, formato_dd.value
             )
             bg = "#1B2D6B" if color_dd.value == "blanco" else "#f5f7ff"
             label = text_input.value.strip()
 
-            if b64:
-                preview = ft.Image(src_base64=b64, width=110, height=110, fit="contain")
-            else:
-                preview = ft.Column([
-                    ft.Icon(ft.icons.QR_CODE, color="white", size=48),
-                    ft.Text("SVG", color="white", size=11, weight="bold"),
-                ], horizontal_alignment="center", alignment="center")
-
-            def _abrir(e, b=b64, fn=filename, lbl=label):
-                abrir_modal(b, fn, lbl)
+            def _abrir(e, du=data_url, fn=filename, lbl=label):
+                abrir_modal(du, fn, lbl)
 
             card = ft.Container(
                 content=ft.Column([
                     ft.Container(
-                        content=preview,
+                        content=ft.Image(src=data_url, width=110, height=110, fit="contain"),
                         bgcolor=bg,
                         border_radius=8,
                         padding=6,
@@ -233,14 +230,7 @@ def main(page: ft.Page):
                         width=135,
                         height=125,
                     ),
-                    ft.Text(
-                        label,
-                        color="#1B2D6B",
-                        size=10,
-                        max_lines=1,
-                        width=135,
-                        text_align="center",
-                    ),
+                    ft.Text(label, color="#1B2D6B", size=10, max_lines=1, width=135, text_align="center"),
                     ft.ElevatedButton(
                         "Ver",
                         bgcolor="#1B2D6B",
@@ -263,9 +253,12 @@ def main(page: ft.Page):
             )
 
             history.controls.insert(0, card)
-            mostrar_snack("✅ QR generado correctamente")
+            abrir_modal(data_url, filename, label)
+            mostrar_snack("✅ QR generado y guardado en Downloads")
 
         except Exception as ex:
+            import traceback
+            print(traceback.format_exc(), flush=True)
             mostrar_snack(f"❌ Error: {ex}")
         finally:
             btn_generar.text = "Generar QR"
@@ -274,7 +267,6 @@ def main(page: ft.Page):
 
     btn_generar.on_click = on_generate
 
-    # Layout
     page.add(
         ft.Container(
             content=ft.Column([
@@ -304,4 +296,4 @@ def main(page: ft.Page):
     )
 
 
-ft.run(main)
+ft.app(main, view=ft.AppView.WEB_BROWSER, port=8550)
