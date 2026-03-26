@@ -51,9 +51,16 @@ def generate_qr(data, color, formato):
         svg_bytes = img_svg.to_string()
         with open(filepath, "wb") as f:
             f.write(svg_bytes)
-        b64 = base64.b64encode(svg_bytes).decode()
-        data_url = f"data:image/svg+xml;base64,{b64}"
-        return data_url, filepath, filename, b64, "image/svg+xml"
+        # Para preview usamos PNG
+        qr2 = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=4)
+        qr2.add_data(data)
+        qr2.make(fit=True)
+        img_png = qr2.make_image(fill_color="black", back_color="white").convert("RGBA")
+        buffer = io.BytesIO()
+        img_png.save(buffer, format="PNG")
+        b64_preview = base64.b64encode(buffer.getvalue()).decode()
+        data_url = f"data:image/png;base64,{b64_preview}"
+        return data_url, filepath, filename, b64_preview, "image/svg+xml"
 
     qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=4)
     qr.add_data(data)
@@ -131,15 +138,15 @@ def main(page: ft.Page):
     modal_label = ft.Text("", color="#1B2D6B", size=13, text_align="center", max_lines=2)
     modal_file = ft.Text("", color="#aaaaaa", size=11, text_align="center")
 
-    current_data_url = {"value": None}
+    current_filename = {"value": None}
 
     def close_modal(e):
         modal.open = False
         page.update()
 
     def descargar(e):
-        if current_data_url["value"]:
-            page.launch_url(current_data_url["value"])
+        if current_filename["value"]:
+            page.launch_url(f"http://localhost:8081/{current_filename['value']}")
 
     modal = ft.AlertDialog(
         modal=True,
@@ -179,7 +186,7 @@ def main(page: ft.Page):
     )
 
     def abrir_modal(data_url, filename, label):
-        current_data_url["value"] = data_url
+        current_filename["value"] = filename
         modal_img.src = data_url
         modal_label.value = label
         modal_file.value = filename
