@@ -13,7 +13,7 @@ from pathlib import Path
 OUTPUT_DIR = str(Path.home() / "Downloads")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "imagenes", "logo-ITM-Group.png")
+LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "imagenes", "logo-ITM-1024x473.png")
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.txt")
 try:
@@ -90,7 +90,7 @@ def main(page: ft.Page):
     try:
         with open(LOGO_PATH, "rb") as f:
             logo_b64 = base64.b64encode(f.read()).decode()
-        logo = ft.Image(src=f"data:image/png;base64,{logo_b64}", width=150, height=55, fit="contain")
+        logo = ft.Image(src=f"data:image/png;base64,{logo_b64}", width=200, height=80  , fit="contain")
     except:
         logo = ft.Text("ITM Group®", size=24, weight="bold", color="#1B2D6B")
 
@@ -146,9 +146,19 @@ def main(page: ft.Page):
         page.update()
 
     def descargar(e):
-        if current_filepath["value"]:
-            import subprocess
-            subprocess.Popen(f'explorer /select,"{current_filepath["value"]}"')
+        if current_filepath["value"] and current_filename["value"]:
+            if page.platform in ("android", "ios"):
+                # En móvil: descargar via servidor local
+                import asyncio
+                async def _launch():
+                    launcher = ft.UrlLauncher()
+                    page.overlay.append(launcher)
+                    page.update()
+                    await launcher.launch_url(f"http://10.11.94.178:8081/{current_filename['value']}")
+                page.run_task(_launch)
+            else:
+                import subprocess
+                subprocess.Popen(f'explorer /select,"{current_filepath["value"]}"')
 
     modal = ft.AlertDialog(
         modal=True,
