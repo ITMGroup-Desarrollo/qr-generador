@@ -110,8 +110,8 @@ def main(page: ft.Page):
     color_dd = ft.Dropdown(
         value="blanco",
         expand=True,
-        color="white",
-        bgcolor="#1B2D6B",
+        color="#1B2D6B",
+        bgcolor="white",
         border_color="#1B2D6B",
         border_radius=8,
         options=[
@@ -123,8 +123,8 @@ def main(page: ft.Page):
     formato_dd = ft.Dropdown(
         value="png",
         expand=True,
-        color="white",
-        bgcolor="#1B2D6B",
+        color="#1B2D6B",
+        bgcolor="white",
         border_color="#1B2D6B",
         border_radius=8,
         options=[
