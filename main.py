@@ -138,6 +138,7 @@ def main(page: ft.Page):
     modal_label = ft.Text("", color="#1B2D6B", size=13, text_align="center", max_lines=2)
     modal_file = ft.Text("", color="#aaaaaa", size=11, text_align="center")
 
+    current_filepath = {"value": None}
     current_filename = {"value": None}
 
     def close_modal(e):
@@ -145,8 +146,9 @@ def main(page: ft.Page):
         page.update()
 
     def descargar(e):
-        if current_filename["value"]:
-            page.launch_url(f"http://localhost:8081/{current_filename['value']}")
+        if current_filepath["value"]:
+            import subprocess
+            subprocess.Popen(f'explorer /select,"{current_filepath["value"]}"')
 
     modal = ft.AlertDialog(
         modal=True,
@@ -185,11 +187,12 @@ def main(page: ft.Page):
         expand=False,
     )
 
-    def abrir_modal(data_url, filename, label):
+    def abrir_modal(data_url, filepath, filename, label):
         current_filename["value"] = filename
+        current_filepath["value"] = filepath
         modal_img.src = data_url
         modal_label.value = label
-        modal_file.value = filename
+        modal_file.value = f"📁 {filename}"
         modal.open = True
         page.update()
 
@@ -223,8 +226,8 @@ def main(page: ft.Page):
             bg = "#1B2D6B" if color_dd.value == "blanco" else "#f5f7ff"
             label = text_input.value.strip()
 
-            def _abrir(e, du=data_url, fn=filename, lbl=label):
-                abrir_modal(du, fn, lbl)
+            def _abrir(e, du=data_url, fp=filepath, fn=filename, lbl=label):
+                abrir_modal(du, fp, fn, lbl)
 
             card = ft.Container(
                 content=ft.Column([
@@ -260,8 +263,8 @@ def main(page: ft.Page):
             )
 
             history.controls.insert(0, card)
-            abrir_modal(data_url, filename, label)
-            mostrar_snack("✅ QR generado y guardado en Downloads")
+            abrir_modal(data_url, filepath, filename, label)
+            mostrar_snack("✅ QR guardado en C:\\Users\\dpech\\Downloads")
 
         except Exception as ex:
             import traceback
